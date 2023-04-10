@@ -24,24 +24,24 @@ int interval = 1000;
 long previousMillis = 0;
 long currentMillis = 0;
 
-    uint32_t starttime = 0;
-    uint32_t hstimer = 0;
-    uint32_t mstimer = 0;
-    unsigned int odom_idx = 0;
-    char odom_encoder_toss = 5;
-    uint32_t odom_encoder_left = 0;
-    uint32_t odom_encoder_right = 0;
-    float odom_x = 0.0;
-    float odom_y = 0.0;
-    float odom_yaw = 0.0;
-    float odom_last_x = 0.0;
-    float odom_last_y = 0.0;
-    float odom_last_yaw = 0.0;
-    float odom_last_time = 0;
-    int encoder_cpr = 4096;
-    int encoder_ppr = 1024;
-    double track_width = 0.15; //m
-    double wheel_circumference = 0.4; 
+uint32_t starttime = 0;
+uint32_t hstimer = 0;
+uint32_t mstimer = 0;
+unsigned int odom_idx = 0;
+char odom_encoder_toss = 5;
+uint32_t odom_encoder_left = 0;
+uint32_t odom_encoder_right = 0;
+float odom_x = 0.0;
+float odom_y = 0.0;
+float odom_yaw = 0.0;
+float odom_last_x = 0.0;
+float odom_last_y = 0.0;
+float odom_last_yaw = 0.0;
+float odom_last_time = 0;
+int encoder_cpr = 4096;
+int encoder_ppr = 1024;
+double track_width = 0.15; //m
+double wheel_circumference = 0.4; 
 #define DELTAT(_nowtime, _thentime) ((_thentime > _nowtime) ? ((0xffffffff - _thentime) + _nowtime) : (_nowtime - _thentime))
 #define NORMALIZE(_z) atan2(sin(_z), cos(_z))
 void setup() {
