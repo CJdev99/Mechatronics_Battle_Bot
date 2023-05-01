@@ -5,6 +5,9 @@ float duration, distance;
 int Var;
 int CheckTime;
 int CurTime;
+double track_width;
+double wheel_circumference;
+int max_rpm = 100;
 
 //initialize drive motors
 const int SpeedPinR = 2;
@@ -18,6 +21,11 @@ const int Dir2L = 30;
 const int IrRight = 29;  // Right side line detection
 const int IrLeft = 25;   //Left side line detection
 const int IrMid = 27;    // Mid line detection
+uint32_t hstimer =0;
+float randInt = 0;
+int counter = 0;
+//deltat macro
+#define DELTAT(_nowtime, _thentime) ((_thentime > _nowtime) ? ((0xffffffff - _thentime) + _nowtime) : (_nowtime - _thentime))
 
 
 void setup() {
@@ -32,6 +40,8 @@ void setup() {
   pinMode(Dir2L, OUTPUT);
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
+  double track_width = 0.3; //m
+  double wheel_circumference = 0.2042039120408256;  //m
   Serial.begin(9600);
 }
 
@@ -39,13 +49,14 @@ void loop() {
   // 1 => line detected
   bool IrArray[3] = {digitalRead(IrLeft), digitalRead(IrMid), digitalRead(IrRight)};
   // {left, mid, right}
-  
+  //get time
+  uint32_t nowtime = millis();
   switch (ReadDist()) {
     
     case 1:
     // object close-> attack until out of bounds
       if (!IrArray[0] && !IrArray[1] && !IrArray[2]){
-        StraightF();
+        cmdvel(1,0);
         }
       else{
           //function to determine how to avoid boundary
@@ -57,7 +68,7 @@ void loop() {
       //StraightF();
       // object detected -> drive to object
       if (!IrArray[0] && !IrArray[1] && !IrArray[2]){
-        StraightF();
+        cmdvel(1,0);
         }
       else{
           //function to determine how to avoid boundary
@@ -66,18 +77,39 @@ void loop() {
       Serial.println(2);
       break;
     case 3:
-      // random movement
+       // random movement
       if (!IrArray[0] && !IrArray[1] && !IrArray[2]){
-        Spin();
+        // if deltaT > 1 s, send random int again
+       if (DELTAT(nowtime,hstimer) >= 220)
+      {
+        hstimer = nowtime;
+        //float randInt1 = random(0,1);
+        int switch_cmd  = counter%2;
+        if (switch_cmd == 0){
+          
+          int posOrNeg = random(0,10);
+          if (posOrNeg > 5){
+            randInt = random(70,150);
+            }
+           else{
+              randInt = -random(70,150);
+             }
+        }
+        else{
+          randInt = 0;
+         }
+        counter++;
+        Serial.println("random: ");
+        Serial.println(randInt);
+        cmdvel(switch_cmd,randInt/100);
+      }
         }
       else{
           //function to determine how to avoid boundary
           avoidBound(IrArray);
           }
-
-      Serial.println(3);
   }
- 
+
 }
 
 int ReadDist() {
@@ -90,13 +122,14 @@ int ReadDist() {
   //Serial.println(distance);
   if (distance < 10) {
     Var = 1;
-  } else if (distance >= 10 && distance < 55) {
+  } else if (distance >= 10 && distance < 70) {
     Var = 2;
-  } else if (distance >= 55) {
+  } else if (distance >= 70) {
     Var = 3;
   }
   return (Var);
 }
+/*
 void Spin() {
   int check = 1;
   CheckTime = millis();  //Allows for button to start the program
@@ -120,70 +153,68 @@ void Spin() {
       check = 0;
     }
   }
+  
 }
+*/
 /// ---------------
 // cmdvel
-/*
+
 void cmdvel(float lin, float ang){
-    float right_speed = lin + track_width * ang / 2.0;
-    float left_speed = lin - track_width * ang / 2.0;
-        // motor power (scale 0-1000)
-        
-        int32_t right_power = right_speed / wheel_circumference/max_rpm * 60.0 * 255;
-        int32_t left_power = left_speed / wheel_circumference/max_rpm * 60.0 * 255;
+
+    float max_lin_speed = 1.0; // Replace with actual value
+    float max_ang_speed = 1; // Replace with actual value
+    float scaled_lin_speed = lin / max_lin_speed;
+    float scaled_ang_speed = ang / max_ang_speed;
+    Serial.println("lin: ");
+        Serial.println(scaled_lin_speed);
+    
+     
+
+    // Calculate motor power commands
+    int32_t right_power = (scaled_lin_speed + scaled_ang_speed) * 255.0;
+    int32_t left_power = (scaled_lin_speed - scaled_ang_speed) * 255.0;
+    
+
+    // Limit motor power commands to between 0 and 255
+    right_power = constrain(right_power, -255, 255);
+    left_power = constrain(left_power, -255, 255);
+    /*
+     Serial.println("right_power: ");
+        Serial.println(right_power);
+        Serial.println("left_power: ");
+        Serial.println(left_power);
+    */
         //send right command
-         analogWrite(SpeedPinR, right_power);
+        
+          
+         analogWrite(SpeedPinR, abs(right_power));
          if (right_power < 0){
+            digitalWrite(Dir1R, LOW);
+            digitalWrite(Dir2R, HIGH);
+            Serial.println("right_power < 0: ");
+    }
+          else{
+            digitalWrite(Dir1R, HIGH);
+            digitalWrite(Dir2R, LOW);
+            Serial.println("right_power > 0: ");
+            }
+        //send left command
+         analogWrite(SpeedPinL, abs(left_power));
+         if (left_power < 0){
             digitalWrite(Dir1L, LOW);
+            digitalWrite(Dir2L, HIGH);
+            Serial.println("left_power < 0: ");
           }
           else{
             digitalWrite(Dir1L, HIGH);
-            }
-
-        //send left command
-         analogWrite(SpeedPinL, 255);
-         if (left_power < 0){
             digitalWrite(Dir2L, LOW);
-          }
-          else{
-            digitalWrite(Dir2L, HIGH);
+            Serial.println("left_power > 0: ");
            }
+        
+      
+        
 }
-*/
-// ----------------
-void StraightF() {
-  LeftFor();
-  RightFor();
-  analogWrite(SpeedPinR, 255);
-  analogWrite(SpeedPinL, 255);
-}
-void BackF() {
-  LeftBack();
-  RightBack();
-  analogWrite(SpeedPinR, 255);
-  analogWrite(SpeedPinL, 255);
-  
-}
-void LeftFor() {
-  digitalWrite(Dir1L, HIGH);
-  digitalWrite(Dir2L, LOW);
-}
-void LeftBack() {
-  digitalWrite(Dir1L, LOW);
-  digitalWrite(Dir2L, HIGH);
-}
-void RightFor() {
-  digitalWrite(Dir1R, HIGH);
-  digitalWrite(Dir2R, LOW);
-}
-void Stop() {
-  analogWrite(SpeedPinR, 0);
-  analogWrite(SpeedPinL, 0);
-}
-void RightBack() {
-  digitalWrite(Dir1R, LOW);
-  digitalWrite(Dir2R, HIGH);
-}
+
 void avoidBound(bool IrArray[3]) {
   // convert to binary number
   int binary = IrArray[2] + 2 * IrArray[1] + 4 * IrArray[0];
@@ -191,42 +222,42 @@ void avoidBound(bool IrArray[3]) {
   switch (binary) {
     // 0,0,0
     case 0: {
-      StraightF();
+      cmdvel(-1,0);
       break;
     }
     //0,0,1
     case 1: {
       Serial.println("turn left 90*");
-      StraightF();
-      LeftBack();
-      delay(1100);
-      StraightF();
+      cmdvel(-1.0,0);
+      delay(400);
+      cmdvel(0,1);
+      delay(random(1800,2200));
+      cmdvel(1,0);
+      delay(800);
       break;
     }
     // 0,1,0
     case 2: {
       //ReverseAndSpin();
-      
-      BackF();
-      delay(500);
-      StraightF();
-      RightFor();
-      LeftBack();
+      cmdvel(-1.0,0);
+      delay(700);
+      cmdvel(0,1);
       delay(2000);
-      StraightF();
+      cmdvel(1,0);
+      delay(800);
+      break;
       
       Serial.println("back up & 180*");
-      break;
+      
     }
     // 0,1,1
     case 3: {
-      BackF();
-      delay(250);
-      StraightF();
-      LeftBack();
-      RightFor();
-      delay(1200);
-      StraightF();
+      cmdvel(-1.0,0);
+      delay(600);
+      cmdvel(0,1);
+      delay(random(1800,2200));
+      cmdvel(1,0);
+      delay(1000);
       Serial.println("turn left 120*");
       break;
 
@@ -234,36 +265,33 @@ void avoidBound(bool IrArray[3]) {
     //1,0,0
     case 4: {
       // turn right
-      StraightF();
-      LeftFor();
-      RightBack();
+      cmdvel(-1.0,0);
+      delay(600);
+      cmdvel(0.0,-1.0);
+      delay(2300);
+      cmdvel(1,0);
       delay(1000);
-      StraightF();
-      delay(100);
       Serial.println("turn left 90*");
       break;
     }
     // 1,0,1
     case 5: {
       Serial.println("180*?");
-      BackF();
-      delay(500);
-      StraightF();
-      RightFor();
-      LeftBack();
-      delay(1250);
+      cmdvel(-1,0);
+      delay(1000);
+      cmdvel(0,-1);
+      delay(1500);
+      cmdvel(1,0);
+      delay(400);
       break;
     }
     // 1,1,0
     case 6: {
-      Stop();
-      BackF();
+      cmdvel(-1,0);
       delay(500);
-      StraightF();
-      RightFor();
-      LeftBack();
-      delay(1200);
-      StraightF();
+      cmdvel(0.0,-1.0);
+      delay(2300);
+      cmdvel(1.0,0.0);
       Serial.println("180*");
       
       break;
