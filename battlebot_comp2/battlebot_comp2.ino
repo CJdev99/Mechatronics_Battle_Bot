@@ -1,4 +1,6 @@
 //initialize Ultrasonic sensor
+
+#include <Servo.h>
 const int trigPin = 9;
 const int echoPin = 10;
 float duration, distance;
@@ -8,6 +10,11 @@ int CurTime;
 double track_width;
 double wheel_circumference;
 int max_rpm = 100;
+int weaponMap;
+
+
+Servo Weapon;
+int myServoRight;
 
 //initialize drive motors
 const int SpeedPinR = 2;
@@ -16,14 +23,28 @@ const int Dir1R = 24;
 const int Dir2R = 26;
 const int Dir1L = 28;
 const int Dir2L = 30;
+const int LED = 4;
+
+const int left_target_IR =11;
+const int right_target_IR = 12;
 
 //initialize IR sensors
 const int IrRight = 29;  // Right side line detection
-const int IrLeft = 25;   //Left side line detection
-const int IrMid = 27;    // Mid line detection
+const int IrLeft = 27;   //Left side line detection
+const int IrMid = 32;
+// Mid line detection
+
+//timers
 uint32_t hstimer =0;
+uint32_t watchDogTimer =0;
+uint32_t leftIRTimer = 3005;
+uint32_t midIRTimer = 3005;
+uint32_t rightIRTimer = 3005;
+uint32_t timer = 0;
+
 float randInt = 0;
 int counter = 0;
+
 //deltat macro
 #define DELTAT(_nowtime, _thentime) ((_thentime > _nowtime) ? ((0xffffffff - _thentime) + _nowtime) : (_nowtime - _thentime))
 
@@ -40,55 +61,137 @@ void setup() {
   pinMode(Dir2L, OUTPUT);
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
+  pinMode(LED,OUTPUT);
+  
+  pinMode(left_target_IR, INPUT);
+  pinMode(right_target_IR,INPUT);
+  
   double track_width = 0.3; //m
   double wheel_circumference = 0.2042039120408256;  //m
+  Weapon.attach(6);
   Serial.begin(9600);
+  delay(3000);
 }
 
 void loop() {
   // 1 => line detected
+  uint32_t nowtime = millis();
   bool IrArray[3] = {digitalRead(IrLeft), digitalRead(IrMid), digitalRead(IrRight)};
+  //start shutoff timer:
+  //start IR value timers
+
+  if (IrArray[1] == 1){
+  
+    leftIRTimer = millis();
+    }
+  if (IrArray[2] == 1){
+    midIRTimer = millis();
+    }
+  if (IrArray[3] == 1){
+    rightIRTimer = millis();
+    }
+
+  if (DELTAT(nowtime,leftIRTimer) < 3000 && DELTAT(nowtime, midIRTimer) < 3000 && DELTAT(nowtime, rightIRTimer) < 3000)
+      {
+        // light LED and buzz
+
+        //while loop to shutoff motor 
+        
+        Serial.println("watchdog triggered");
+        digitalWrite(LED, HIGH);
+        timer = millis();
+        while (true){
+          if (DELTAT(timer, nowtime) > 15000){
+            Serial.println("watchdog ended");
+            break;
+            }
+          cmdvel(0,0);
+          timer = millis();
+          
+          }
+         digitalWrite(LED, LOW);
+        
+        
+      }
+      // if no line has been detected in last 10 sec, shutdown
+      /*
+  if (DELTAT(nowtime,leftIRTimer) > 10000 && DELTAT(nowtime, midIRTimer) > 10000 && DELTAT(nowtime, rightIRTimer) > 3000)
+      {
+        // light LED and buzz
+
+        //while loop to shutoff motor 
+        
+        Serial.println("watchdog triggered");
+        digitalWrite(LED, HIGH);
+        timer = millis();
+        while (true){
+          if (DELTAT(timer, nowtime) > 30000){
+            Serial.println("watchdog ended");
+            break;
+            }
+          cmdvel(0,0);
+          timer = millis();
+          
+          }
+         digitalWrite(LED, LOW);
+        
+        
+      }
+
+*/
   // {left, mid, right}
   //get time
-  uint32_t nowtime = millis();
+
+  //float loopstart = millis();
   switch (ReadDist()) {
     
     case 1:
     // object close-> attack until out of bounds
-      if (!IrArray[0] && !IrArray[1] && !IrArray[2]){
+      if (!IrArray[0] && !IrArray[2]){
+        RunWeapon(true);
         cmdvel(1,0);
+        
         }
       else{
           //function to determine how to avoid boundary
           avoidBound(IrArray);
+          
           }
-      Serial.println(1);
+      //println(1);
       break;
     case 2:
+      RunWeapon(false);
       //StraightF();
       // object detected -> drive to object
-      if (!IrArray[0] && !IrArray[1] && !IrArray[2]){
+      if (!IrArray[0] && !IrArray[2]){
+        
         cmdvel(1,0);
+        break;
         }
       else{
           //function to determine how to avoid boundary
           avoidBound(IrArray);
+          break;
           }
-      Serial.println(2);
+      //Serial.println(2);
       break;
     case 3:
+    RunWeapon(false);
        // random movement
-      if (!IrArray[0] && !IrArray[1] && !IrArray[2]){
-        // if deltaT > 1 s, send random int again
-       if (DELTAT(nowtime,hstimer) >= 220)
+      if (!IrArray[0] && !IrArray[2]){
+        // if deltaT > 2 s, send new rand motion
+      
+       // if it's been > 2.2 seconds since last random motion, send new one
+       if (DELTAT(nowtime,hstimer) >= 2200)
       {
         hstimer = nowtime;
         //float randInt1 = random(0,1);
         int switch_cmd  = counter%2;
         if (switch_cmd == 0){
-          
+          // random number to send pos or neg ang velocity
           int posOrNeg = random(0,10);
           if (posOrNeg > 5){
+            // random ang vel between 70 and 150 ( to make more aggressive spinning motions)
             randInt = random(70,150);
             }
            else{
@@ -99,8 +202,8 @@ void loop() {
           randInt = 0;
          }
         counter++;
-        Serial.println("random: ");
-        Serial.println(randInt);
+        //Serial.println("random: ");
+        //Serial.println(randInt);
         cmdvel(switch_cmd,randInt/100);
       }
         }
@@ -112,6 +215,14 @@ void loop() {
 
 }
 
+void RunWeapon(bool pos){
+  Serial.println("run weapon: ");
+  Serial.println(pos);
+  if (pos == false){Weapon.write(map(5, 0, 100, 0, 90));}
+  else{Weapon.write(map(38, 0, 100, 0, 90));}
+}
+
+
 int ReadDist() {
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2);
@@ -119,7 +230,11 @@ int ReadDist() {
   digitalWrite(trigPin, LOW);
   duration = pulseIn(echoPin, HIGH);
   distance = (duration * .0343) / 2;  //multipy duration by speed of sound and divide by 2 because it has to travel the distance twice
+  //Serial.println("read distance");
+  //Serial.println("read distance");
   //Serial.println(distance);
+  boolean left_target = digitalRead(left_target_IR);
+  boolean right_target = digitalRead(right_target_IR);
   if (distance < 10) {
     Var = 1;
   } else if (distance >= 10 && distance < 70) {
@@ -156,6 +271,7 @@ void Spin() {
   
 }
 */
+
 /// ---------------
 // cmdvel
 
@@ -166,7 +282,7 @@ void cmdvel(float lin, float ang){
     float scaled_lin_speed = lin / max_lin_speed;
     float scaled_ang_speed = ang / max_ang_speed;
     Serial.println("lin: ");
-        Serial.println(scaled_lin_speed);
+    Serial.println(scaled_lin_speed);
     
      
 
@@ -178,12 +294,12 @@ void cmdvel(float lin, float ang){
     // Limit motor power commands to between 0 and 255
     right_power = constrain(right_power, -255, 255);
     left_power = constrain(left_power, -255, 255);
-    /*
+    
      Serial.println("right_power: ");
         Serial.println(right_power);
         Serial.println("left_power: ");
         Serial.println(left_power);
-    */
+    
         //send right command
         
           
@@ -191,13 +307,14 @@ void cmdvel(float lin, float ang){
          if (right_power < 0){
             digitalWrite(Dir1R, LOW);
             digitalWrite(Dir2R, HIGH);
-            Serial.println("right_power < 0: ");
-    }
+            //Serial.println("right_power < 0: ");
+          }
           else{
             digitalWrite(Dir1R, HIGH);
             digitalWrite(Dir2R, LOW);
-            Serial.println("right_power > 0: ");
+            //Serial.println("right_power > 0: ");
             }
+        
         //send left command
          analogWrite(SpeedPinL, abs(left_power));
          if (left_power < 0){
@@ -210,14 +327,14 @@ void cmdvel(float lin, float ang){
             digitalWrite(Dir2L, LOW);
             Serial.println("left_power > 0: ");
            }
-        
-      
-        
 }
 
 void avoidBound(bool IrArray[3]) {
   // convert to binary number
   int binary = IrArray[2] + 2 * IrArray[1] + 4 * IrArray[0];
+  Serial.println(IrArray[2]);
+  Serial.println(IrArray[1]);
+  Serial.println(IrArray[0]);
 
   switch (binary) {
     // 0,0,0
@@ -227,13 +344,13 @@ void avoidBound(bool IrArray[3]) {
     }
     //0,0,1
     case 1: {
-      Serial.println("turn left 90*");
+      Serial.println("avoid");
       cmdvel(-1.0,0);
       delay(400);
       cmdvel(0,1);
-      delay(random(1800,2200));
+      delay(random(800,1200));
       cmdvel(1,0);
-      delay(800);
+      delay(500);
       break;
     }
     // 0,1,0
@@ -242,12 +359,12 @@ void avoidBound(bool IrArray[3]) {
       cmdvel(-1.0,0);
       delay(700);
       cmdvel(0,1);
-      delay(2000);
+      delay(500);
       cmdvel(1,0);
-      delay(800);
+      Serial.println("avoid");
       break;
       
-      Serial.println("back up & 180*");
+      
       
     }
     // 0,1,1
@@ -255,10 +372,10 @@ void avoidBound(bool IrArray[3]) {
       cmdvel(-1.0,0);
       delay(600);
       cmdvel(0,1);
-      delay(random(1800,2200));
+      delay(random(500,700));
       cmdvel(1,0);
-      delay(1000);
-      Serial.println("turn left 120*");
+      delay(300);
+      Serial.println("avoid");
       break;
 
     }
@@ -268,21 +385,20 @@ void avoidBound(bool IrArray[3]) {
       cmdvel(-1.0,0);
       delay(600);
       cmdvel(0.0,-1.0);
-      delay(2300);
+      delay(500);
+      
       cmdvel(1,0);
-      delay(1000);
-      Serial.println("turn left 90*");
+     Serial.println("avoid");
       break;
     }
     // 1,0,1
     case 5: {
-      Serial.println("180*?");
+      Serial.println("avoid");
       cmdvel(-1,0);
       delay(1000);
       cmdvel(0,-1);
-      delay(1500);
+      delay(600);
       cmdvel(1,0);
-      delay(400);
       break;
     }
     // 1,1,0
@@ -290,9 +406,9 @@ void avoidBound(bool IrArray[3]) {
       cmdvel(-1,0);
       delay(500);
       cmdvel(0.0,-1.0);
-      delay(2300);
+      delay(600);
       cmdvel(1.0,0.0);
-      Serial.println("180*");
+      Serial.println("avoid");
       
       break;
     }
